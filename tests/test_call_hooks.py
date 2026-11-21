@@ -4,6 +4,7 @@ import tarfile
 import zipfile
 from os.path import abspath, dirname
 from os.path import join as pjoin
+from subprocess import CalledProcessError
 from unittest.mock import Mock
 
 import pytest
@@ -228,8 +229,24 @@ def test__supported_features(pkg, expected):
     assert res == expected
 
 
-def test_warnings():
+def test_warnings(capfd):
     hooks = get_hooks("pkg-with-warnings")
     with modified_env({"PYTHONPATH": BUILDSYS_PKGS}):
         with pytest.warns(BuildBackendWarning, match="this is my example warning"):
             hooks.get_requires_for_build_wheel({})
+
+    assert "UserWarning: this is my example warning" in capfd.readouterr().err
+
+
+def test_failed_hook_preserves_warnings(capfd, tmp_path):
+    hooks = get_hooks("pkg-with-warnings")
+    with modified_env({"PYTHONPATH": BUILDSYS_PKGS}):
+        with pytest.raises(CalledProcessError):
+            hooks.build_wheel(str(tmp_path))
+
+    stderr = capfd.readouterr().err
+    warning = "FutureWarning: deprecated build option"
+    failure = "RuntimeError: wheel build failed"
+    assert warning in stderr
+    assert failure in stderr
+    assert stderr.index(warning) < stderr.index(failure)
